@@ -11,7 +11,8 @@
     },
     "require": {
         "php": "^8.2",
-        "codeigniter4/framework": "^4.7"
+        "codeigniter4/framework": "^4.7",
+        "firebase/php-jwt": "^6.10"
     },
     "require-dev": {
         "fakerphp/faker": "^1.9",
@@ -38,6 +39,7 @@
         "sort-packages": true
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit",
+        "test:api": "phpunit --testsuite API --no-coverage"
     }
 }

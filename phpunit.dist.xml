@@ -24,6 +24,9 @@
         <testsuite name="App">
             <directory>./tests</directory>
         </testsuite>
+        <testsuite name="API">
+            <directory>./tests/api</directory>
+        </testsuite>
     </testsuites>
 
     <logging>
@@ -45,6 +48,10 @@
     <php>
         <server name="app.baseURL" value="http://example.com/"/>
         <server name="CODEIGNITER_SCREAM_DEPRECATIONS" value="0"/>
+        <env name="JWT_SECRET" value="test-jwt-secret-key"/>
+        <env name="JWT_TTL" value="3600"/>
+        <env name="JWT_ISSUER" value="kcu-api-test"/>
+        <env name="JWT_AUDIENCE" value="kcu-clients-test"/>
         <!-- Directory containing phpunit.xml -->
         <const name="HOMEPATH" value="./"/>
         <!-- Directory containing the Paths config file -->
