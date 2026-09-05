@@ -151,7 +151,7 @@ jobs:
 
       - name: Deploy over FTP
         if: steps.mode.outputs.method == 'ftp'
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
