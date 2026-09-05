@@ -1,0 +1,62 @@
+name: Package release
+description: Build a production release archive (tar.gz and zip) without tests/.env/.git
+
+inputs:
+  output-dir:
+    description: Directory for release archives
+    required: false
+    default: build
+
+outputs:
+  tar-path:
+    description: Path to tar.gz archive
+    value: ${{ steps.pack.outputs.tar_path }}
+  zip-path:
+    description: Path to zip archive
+    value: ${{ steps.pack.outputs.zip_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Package application
+      id: pack
+      shell: bash
+      run: |
+        set -euo pipefail
+        OUT="${{ inputs.output-dir }}"
+        mkdir -p "$OUT/dist"
+
+        rsync -a \
+          --exclude='.git' \
+          --exclude='.github' \
+          --exclude='tests' \
+          --exclude='build' \
+          --exclude='postman' \
+          --exclude='.env' \
+          --exclude='phpunit.dist.xml' \
+          --exclude='writable/cache/*' \
+          --exclude='writable/logs/*' \
+          --exclude='writable/session/*' \
+          --exclude='writable/uploads/*' \
+          --exclude='writable/debugbar/*' \
+          ./ "$OUT/dist/"
+
+        mkdir -p \
+          "$OUT/dist/writable/cache" \
+          "$OUT/dist/writable/logs" \
+          "$OUT/dist/writable/session" \
+          "$OUT/dist/writable/uploads" \
+          "$OUT/dist/writable/debugbar"
+
+        touch \
+          "$OUT/dist/writable/cache/index.html" \
+          "$OUT/dist/writable/logs/index.html" \
+          "$OUT/dist/writable/session/index.html" \
+          "$OUT/dist/writable/uploads/index.html" \
+          "$OUT/dist/writable/debugbar/index.html"
+
+        tar -czf "$OUT/kcu-release.tar.gz" -C "$OUT/dist" .
+        (cd "$OUT/dist" && zip -qr "../kcu-release.zip" .)
+
+        echo "tar_path=$OUT/kcu-release.tar.gz" >> "$GITHUB_OUTPUT"
+        echo "zip_path=$OUT/kcu-release.zip" >> "$GITHUB_OUTPUT"
