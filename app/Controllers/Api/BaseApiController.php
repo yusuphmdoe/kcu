@@ -69,9 +69,13 @@ abstract class BaseApiController extends ResourceController
      */
     protected function requestPayload(): array
     {
-        $json = $this->request->getJSON(true);
-        if (is_array($json)) {
-            return $json;
+        try {
+            $json = $this->request->getJSON(true);
+            if (is_array($json)) {
+                return $json;
+            }
+        } catch (\Throwable) {
+            // Fall through to form/post body.
         }
 
         $post = $this->request->getPost();
@@ -84,9 +88,13 @@ abstract class BaseApiController extends ResourceController
      */
     protected function requestUpdatePayload(): array
     {
-        $json = $this->request->getJSON(true);
-        if (is_array($json)) {
-            return $json;
+        try {
+            $json = $this->request->getJSON(true);
+            if (is_array($json)) {
+                return $json;
+            }
+        } catch (\Throwable) {
+            // Fall through to raw input.
         }
 
         $raw = $this->request->getRawInput();

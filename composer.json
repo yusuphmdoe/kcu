@@ -40,6 +40,11 @@
     },
     "scripts": {
         "test": "phpunit",
-        "test:api": "phpunit --testsuite API --no-coverage"
+        "test:api": "phpunit --testsuite API --no-coverage",
+        "ci:syntax": "find app public tests -name '*.php' -print0 | xargs -0 -n1 php -l",
+        "ci": [
+            "@composer validate --strict",
+            "@test"
+        ]
     }
 }

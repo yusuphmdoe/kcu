@@ -1,0 +1,180 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target GitHub environment
+        required: true
+        type: string
+        default: production
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+concurrency:
+  group: deploy-${{ inputs.environment || github.event.inputs.environment }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment || github.event.inputs.environment }}
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ inputs.environment || github.event.inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: kcu-release
+          path: release
+
+      - name: Fallback build when artifact is missing
+        if: steps.download.outcome != 'success'
+        uses: ./.github/actions/setup-php
+        with:
+          php-version: '8.3'
+          coverage: none
+          composer-flags: '--no-dev --prefer-dist --optimize-autoloader'
+
+      - name: Fallback package when artifact is missing
+        if: steps.download.outcome != 'success'
+        uses: ./.github/actions/package-release
+        with:
+          output-dir: build
+
+      - name: Stage fallback artifact
+        if: steps.download.outcome != 'success'
+        run: |
+          mkdir -p release
+          cp build/kcu-release.tar.gz release/
+
+      - name: Extract release package
+        run: |
+          mkdir -p deploy
+          tar -xzf release/kcu-release.tar.gz -C deploy
+          ls -la deploy | head
+
+      - name: Detect deploy method
+        id: mode
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ]; then
+            echo "method=ssh" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FTP_SERVER" ]; then
+            echo "method=ftp" >> "$GITHUB_OUTPUT"
+          else
+            echo "method=none" >> "$GITHUB_OUTPUT"
+          fi
+          echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+          echo "ftp_dir=${FTP_SERVER_DIR:-/}" >> "$GITHUB_OUTPUT"
+
+      - name: Write runtime .env
+        if: steps.mode.outputs.method != 'none'
+        working-directory: deploy
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          ENV_NAME: ${{ inputs.environment || github.event.inputs.environment }}
+          DB_HOSTNAME: ${{ secrets.DB_HOSTNAME }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        run: |
+          CI_ENV="development"
+          if [ "$ENV_NAME" = "production" ]; then CI_ENV="production"; fi
+          cat > .env <<EOF
+          CI_ENVIRONMENT = ${CI_ENV}
+          app.baseURL = '${APP_BASE_URL}'
+          database.default.hostname = ${DB_HOSTNAME}
+          database.default.database = ${DB_DATABASE}
+          database.default.username = ${DB_USERNAME}
+          database.default.password = '${DB_PASSWORD}'
+          database.default.DBDriver = MySQLi
+          database.default.port = 3306
+          encryption.key = ${ENCRYPTION_KEY}
+          JWT_SECRET = ${JWT_SECRET}
+          JWT_TTL = 28800
+          JWT_ISSUER = kcu-api
+          JWT_AUDIENCE = kcu-clients
+          EOF
+
+      - name: Deploy over SSH
+        if: steps.mode.outputs.method == 'ssh'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.mode.outputs.ssh_port }}
+          source: "deploy/*"
+          target: ${{ secrets.DEPLOY_PATH }}
+          strip_components: 1
+          overwrite: true
+
+      - name: Post-deploy remote commands
+        if: steps.mode.outputs.method == 'ssh'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.mode.outputs.ssh_port }}
+          script: |
+            set -e
+            cd "${{ secrets.DEPLOY_PATH }}"
+            mkdir -p writable/cache writable/logs writable/session writable/uploads writable/debugbar
+            chmod -R ug+rwx writable || true
+            php spark cache:clear || true
+            echo "Deployed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Deploy over FTP
+        if: steps.mode.outputs.method == 'ftp'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./deploy/
+          server-dir: ${{ steps.mode.outputs.ftp_dir }}
+          exclude: |
+            **/writable/cache/**
+            **/writable/logs/**
+            **/writable/session/**
+            **/writable/debugbar/**
+
+      - name: Summary
+        env:
+          METHOD: ${{ steps.mode.outputs.method }}
+          ENV_NAME: ${{ inputs.environment || github.event.inputs.environment }}
+        run: |
+          {
+            echo "### Deploy complete"
+            echo "- Environment: \`${ENV_NAME}\`"
+            echo "- Method: \`${METHOD}\`"
+            if [ "$METHOD" = "none" ]; then
+              echo ""
+              echo "No deploy secrets configured. See \`.github/DEPLOY_SECRETS.md\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

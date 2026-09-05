@@ -1,0 +1,48 @@
+name: Setup PHP
+description: Install PHP, enable extensions, restore Composer cache, and install dependencies
+
+inputs:
+  php-version:
+    description: PHP version
+    required: false
+    default: '8.3'
+  coverage:
+    description: Coverage driver (none|xdebug|pcov)
+    required: false
+    default: 'none'
+  composer-flags:
+    description: Extra flags for composer install
+    required: false
+    default: '--prefer-dist'
+  extensions:
+    description: PHP extensions
+    required: false
+    default: 'intl, json, mbstring, mysqlnd, sqlite3, xml, curl, openssl'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer
+        extensions: ${{ inputs.extensions }}
+        coverage: ${{ inputs.coverage }}
+
+    - name: Get Composer cache directory
+      id: composer-cache
+      shell: bash
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer packages
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-composer-
+
+    - name: Install Composer dependencies
+      shell: bash
+      run: composer install --no-progress --no-interaction ${{ inputs.composer-flags }}

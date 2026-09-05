@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build release artifact
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP & Composer (production)
+        uses: ./.github/actions/setup-php
+        with:
+          php-version: '8.3'
+          coverage: none
+          composer-flags: '--no-dev --prefer-dist --optimize-autoloader'
+
+      - name: Package release
+        uses: ./.github/actions/package-release
+        with:
+          output-dir: build
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kcu-release
+          path: |
+            build/kcu-release.tar.gz
+            build/kcu-release.zip
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          {
+            echo "### Build complete"
+            echo "- Artifact: \`kcu-release\`"
+            echo "- Files: \`kcu-release.tar.gz\`, \`kcu-release.zip\`"
+            ls -lh build/kcu-release.tar.gz build/kcu-release.zip
+          } >> "$GITHUB_STEP_SUMMARY"

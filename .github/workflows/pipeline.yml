@@ -1,0 +1,54 @@
+name: Pipeline
+
+# Orchestrates CI → Build → Deploy.
+# Deploy runs only after CI (tests) and Build both succeed.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - staging
+          - production
+      skip_deploy:
+        description: Run CI + Build only (skip deploy)
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build
+    needs: ci
+    uses: ./.github/workflows/build.yml
+
+  deploy:
+    name: Deploy
+    needs: [ci, build]
+    if: >
+      always() &&
+      needs.ci.result == 'success' &&
+      needs.build.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy == false)
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
+    secrets: inherit
